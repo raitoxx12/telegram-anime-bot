@@ -146,11 +146,12 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
-    keep_alive()
-    nest_asyncio.apply()
-        try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(main())
-    except RuntimeError as e:
-        print(f"⚠️ RuntimeError caught safely: {e}")
+    keep_alive()
+    nest_asyncio.apply()
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
+    except RuntimeError as e:
+        print(f"⚠️ RuntimeError caught safely: {e}")
+
 
