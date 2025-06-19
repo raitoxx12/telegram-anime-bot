@@ -42,11 +42,23 @@ def keep_alive():
 # === HANDLERS ===
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # If user sends /start with junk text, block it with warning
+    text = update.message.text.strip().lower()
+    junk_texts = ["hi", "hey", "hello", "hola", "wassup", "yo"]
+    if any(word in text for word in junk_texts):
+        await update.message.reply_text(
+            "🚫 You are trying to interrupt the bot by sending these bullshit messages.\n"
+            "If you want to store your files, go to @filestorebot\n"
+            "If not, get lost @zeqseed"
+        )
+        return
+
+    # Normal start behavior
     if data:
         anime_list = "\n".join([f"🎬 `{tag}` — {len(files)} episode(s)" for tag, files in data.items()])
-        await update.message.reply_text(f"💻 *Available Anime:*\n\n{anime_list}", parse_mode="Markdown")
+        await update.message.reply_text(f"📌 *Available Anime:*\n\n{anime_list}", parse_mode="Markdown")
     else:
-        await update.message.reply_text("📭 No anime saved yet.")
+        await update.message.reply_text("📭 No hashtags available. Upload anime using your owner access.")
 
 async def handle_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global temp_files
@@ -60,29 +72,54 @@ async def handle_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if file:
         temp_files.append(file.file_id)
 
-    # Only show this message once when batch starts
-    if len(temp_files) == 1:
-        await update.message.reply_text("📥 Files are being received...\n(You will be notified once all are received.)")
+    context.chat_data["file_count"] = context.chat_data.get("file_count", 0) + 1
+
+    # Only show message once per batch
+    if context.chat_data["file_count"] == 1:
+        await update.message.reply_text("📥 Receiving files...\n(I'll let you know once all are received.)")
 
 async def handle_hashtag(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global temp_files
     tag = update.message.text.strip()
 
+    # If user sends unrelated text starting with #, block and warn
+    junk_texts = ["hi", "hey", "hello", "hola", "wassup", "yo"]
+    if any(word in tag.lower() for word in junk_texts):
+        await update.message.reply_text(
+            "🚫 You are trying to interrupt the bot by sending these bullshit messages.\n"
+            "If you want to store your files, go to @filestorebot\n"
+            "If not, get lost @zeqseed"
+        )
+        return
+
     if not tag.startswith("#"):
         await update.message.reply_text("❌ Invalid hashtag format. Use `#Naruto`, `#AOT`, etc.")
         return
 
+    # Save mode (when files are waiting to be tagged)
     if temp_files:
         if tag not in data:
             data[tag] = []
 
         new_files = [f for f in temp_files if f not in data[tag]]
+        added_count = len(new_files)
+
         data[tag].extend(new_files)
         save_data()
+        temp_files.clear()
+        context.chat_data["file_count"] = 0
 
-        await update.message.reply_text(f"✅ {len(new_files)} new file(s) saved under `{tag}`", parse_mode="Markdown")
-        temp_files = []
+        if added_count == 0:
+            await update.message.reply_text(f"⚠️ All files were already saved under `{tag}`.", parse_mode="Markdown")
+        else:
+            message = (
+                f"✅ {added_count} new file(s) *added* under `{tag}`"
+                if tag in data and len(data[tag]) > added_count
+                else f"✅ {added_count} file(s) *saved* under `{tag}`"
+            )
+            await update.message.reply_text(message, parse_mode="Markdown")
     else:
+        # Retrieval mode
         files = data.get(tag)
         if not files:
             await update.message.reply_text("⚠️ No files found under this hashtag.")
