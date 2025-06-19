@@ -5,8 +5,10 @@ import nest_asyncio
 from flask import Flask
 from threading import Thread
 from telegram import Update
-from telegram.ext import (ApplicationBuilder, CommandHandler,
-                          MessageHandler, filters, ContextTypes)
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler,
+    MessageHandler, filters, ContextTypes
+)
 
 # === CONFIG ===
 BOT_TOKEN = "6822633489:AAEBQWl94eDTWqRMRwdhoEyElWETF6DFuPE"
@@ -23,17 +25,21 @@ async def load_data():
         async with aiohttp.ClientSession() as session:
             async with session.get(NPOINT_URL) as resp:
                 data = await resp.json()
+                print("✅ Data loaded from NPoint")
     except Exception as e:
-        print(f"Error loading data: {e}")
+        print(f"❌ Error loading data: {e}")
         data = {}
 
 async def save_data():
+    if not data or data == {}:
+        print("⚠️ Skipping save: data is empty!")
+        return
     try:
         async with aiohttp.ClientSession() as session:
             await session.put(NPOINT_URL, json=data)
             print("✅ Data saved to NPoint")
     except Exception as e:
-        print(f"Error saving data: {e}")
+        print(f"❌ Error saving data: {e}")
 
 # === FLASK KEEP-ALIVE ===
 app = Flask(__name__)
@@ -51,8 +57,12 @@ def keep_alive():
 # === HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data:
-        anime_list = "\n".join([f"🎬 `{tag}` — {len(files)} episode(s)" for tag, files in data.items()])
-        await update.message.reply_text(f"📌 *Available Anime:*\n\n{anime_list}", parse_mode="Markdown")
+        anime_list = "\n".join(
+            [f"🎬 `{tag}` — {len(files)} episode(s)" for tag, files in data.items()]
+        )
+        await update.message.reply_text(
+            f"📌 *Available Anime:*\n\n{anime_list}", parse_mode="Markdown"
+        )
     else:
         await update.message.reply_text("📭 No anime available. Upload using owner access.")
 
@@ -69,9 +79,10 @@ async def handle_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.chat_data["file_count"] = context.chat_data.get("file_count", 0) + 1
 
-    # Only show one message for batch
     if context.chat_data["file_count"] == 1:
-        await update.message.reply_text(f"📥 {len(temp_files)} file(s) received. Now send a hashtag to tag them.")
+        await update.message.reply_text(
+            f"📥 {len(temp_files)} file(s) received. Now send a hashtag to tag them."
+        )
 
 async def handle_hashtag(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global temp_files
@@ -87,8 +98,14 @@ async def handle_hashtag(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         new_files = [f for f in temp_files if f not in data[tag]]
         data[tag].extend(new_files)
+        print(f"Saving tag: {tag}, with {len(data[tag])} files")
         await save_data()
-        msg = f"✅ {len(new_files)} new file(s) saved under `{tag}`" if new_files else f"⚠️ All files were already saved under `{tag}`"
+
+        msg = (
+            f"✅ {len(new_files)} new file(s) saved under `{tag}`"
+            if new_files
+            else f"⚠️ All files were already saved under `{tag}`"
+        )
         await update.message.reply_text(msg, parse_mode="Markdown")
         temp_files.clear()
         context.chat_data["file_count"] = 0
@@ -97,7 +114,10 @@ async def handle_hashtag(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not files:
             await update.message.reply_text("⚠️ No files found under this hashtag.")
         else:
-            await update.message.reply_text(f"📦 Sending *{len(files)}* file(s) under `{tag}`...", parse_mode="Markdown")
+            await update.message.reply_text(
+                f"📦 Sending *{len(files)}* file(s) under `{tag}`...",
+                parse_mode="Markdown"
+            )
             for file_id in files:
                 try:
                     await update.message.reply_document(file_id)
@@ -123,10 +143,13 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & (~filters.Regex(r"^#") & ~filters.COMMAND), handle_spam))
 
     print("✅ Bot is running...")
-
     await app.run_polling()
 
 if __name__ == "__main__":
     keep_alive()
     nest_asyncio.apply()
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        print(f"⚠️ RuntimeError caught: {e}")
+      
