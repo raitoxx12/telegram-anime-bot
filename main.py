@@ -52,9 +52,7 @@ def keep_alive():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data:
         anime_list = "\n".join([f"🎬 `{tag}` — {len(files)} episode(s)" for tag, files in data.items()])
-        await update.message.reply_text(f"📌 *Available Anime:*
-
-{anime_list}", parse_mode="Markdown")
+        await update.message.reply_text(f"📌 *Available Anime:*\n\n{anime_list}", parse_mode="Markdown")
     else:
         await update.message.reply_text("📭 No anime available. Upload using owner access.")
 
@@ -125,11 +123,10 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & (~filters.Regex(r"^#") & ~filters.COMMAND), handle_spam))
 
     print("✅ Bot is running...")
+
     await app.run_polling()
 
 if __name__ == "__main__":
     keep_alive()
     nest_asyncio.apply()
     asyncio.run(main())
-    
-
