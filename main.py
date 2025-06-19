@@ -148,7 +148,9 @@ async def main():
 if __name__ == "__main__":
     keep_alive()
     nest_asyncio.apply()
-    try:
-        asyncio.run(main())
+        try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
     except RuntimeError as e:
-        print(f"⚠️ RuntimeError caught: {e}")
+        print(f"⚠️ RuntimeError caught safely: {e}")
+
