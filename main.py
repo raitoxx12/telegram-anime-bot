@@ -1,101 +1,128 @@
 import logging
-import os
-import json
-import aiohttp
 from telegram import Update, InputFile
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+)
+import firebase_admin
+from firebase_admin import credentials, db
+import os
 
+# === CONFIG ===
 BOT_TOKEN = "7770796733:AAHrR9GlvFqbD2TL6JPnlhWtoV844-3IxSw"
 OWNER_ID = 5525952879
-FIREBASE_URL = "https://animebotstorage-default-rtdb.asia-southeast1.firebasedatabase.app/files.json"
-REQUIRED_CHANNEL = "@ongoinganiime"
+FIREBASE_URL = "https://animebotstorage-default-rtdb.asia-southeast1.firebasedatabase.app/"
+CHANNEL_ID = "@zxdverse"
 
+# === INIT FIREBASE ===
+if not firebase_admin._apps:
+    cred = credentials.Certificate({
+        # Your Firebase service account info here
+        "type": "service_account",
+        "project_id": "your-project-id",
+        "private_key_id": "...",
+        "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+        "client_email": "...",
+        "client_id": "...",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": "..."
+    })
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': FIREBASE_URL
+    })
+
+db_ref = db.reference("anime")
+
+# === SETUP LOGGING ===
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+buffered_files = {}
 
-user_pending_files = {}
-
-async def is_user_in_channel(user_id: int, session: aiohttp.ClientSession) -> bool:
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getChatMember?chat_id={REQUIRED_CHANNEL}&user_id={user_id}"
-    async with session.get(url) as resp:
-        data = await resp.json()
-        return data.get("result", {}).get("status") in ["member", "administrator", "creator"]
-
-async def load_data():
-    async with aiohttp.ClientSession() as session:
-        async with session.get(FIREBASE_URL) as resp:
-            return await resp.json() or {}
-
-async def save_data(data):
-    async with aiohttp.ClientSession() as session:
-        async with session.put(FIREBASE_URL, json=data) as resp:
-            return await resp.json()
-
+# === HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    async with aiohttp.ClientSession() as session:
-        if not await is_user_in_channel(update.effective_user.id, session):
-            await update.message.reply_text("📢 Join our channel to use this bot: @ongoinganiime")
-            return
-    data = await load_data()
-    if not data:
-        await update.message.reply_text("📭 No anime available yet.")
+    user = update.effective_user
+    if not await is_user_in_channel(context, user.id):
+        await update.message.reply_text(
+            "🔐 Please join our channel to use this bot: https://t.me/zxdverse"
+        )
         return
-    msg = "\ud83d\udccc Available Anime:\n\n" + "\n".join(f"- {key}" for key in data.keys())
-    await update.message.reply_text(msg)
+
+    data = db_ref.get()
+    if data:
+        animes = "\n".join([f"🔹 {name}" for name in data.keys()])
+        await update.message.reply_text(f"📌 Available Anime:\n{animes}")
+    else:
+        await update.message.reply_text("📭 No anime available yet.")
+
+
+async def is_user_in_channel(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
+    try:
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except:
+        return False
+
 
 async def handle_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
-    media_group_id = update.message.media_group_id
-    if media_group_id:
-        group = user_pending_files.setdefault(update.effective_user.id, {}).setdefault(media_group_id, [])
-        group.append(update.message)
-    else:
-        user_pending_files.setdefault(update.effective_user.id, {}).setdefault("single", []).append(update.message)
-    total = sum(len(v) for v in user_pending_files[OWNER_ID].values())
-    await update.message.reply_text(f"\ud83d\udce9 {total} files received. Now send a name to store them.")
+
+    user_id = update.effective_user.id
+    buffered_files[user_id] = buffered_files.get(user_id, [])
+
+    if update.message.document:
+        buffered_files[user_id].append(update.message.document.file_id)
+    elif update.message.video:
+        buffered_files[user_id].append(update.message.video.file_id)
+    elif update.message.audio:
+        buffered_files[user_id].append(update.message.audio.file_id)
+
+    await update.message.reply_text(
+        f"📥 {len(buffered_files[user_id])} files received. Now send a name to tag them."
+    )
+
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    user_id = update.effective_user.id
+    user = update.effective_user
+    text = update.message.text.strip().lower()
 
-    async with aiohttp.ClientSession() as session:
-        if not await is_user_in_channel(user_id, session):
-            await update.message.reply_text("📢 Join our channel to use this bot: @ongoinganiime")
-            return
-
-    if user_id == OWNER_ID and user_id in user_pending_files:
-        pending = user_pending_files.pop(user_id)
-        all_files = []
-        for msgs in pending.values():
-            for msg in msgs:
-                file_id = (msg.document or msg.video or msg.audio).file_id
-                all_files.append(file_id)
-        data = await load_data()
-        if text in data:
-            data[text].extend(all_files)
-            await update.message.reply_text(f"\u2705 {len(all_files)} new files added under {text}")
-        else:
-            data[text] = all_files
-            await update.message.reply_text(f"\u2705 {len(all_files)} files saved under {text}")
-        await save_data(data)
+    if text.startswith("/"):
         return
 
-    # User requested an anime
-    data = await load_data()
-    key = text.strip("#")  # allow with or without hashtag
-    if key in data:
-        for file_id in data[key]:
-            await update.message.reply_document(file_id)
-    else:
+    if not await is_user_in_channel(context, user.id):
         await update.message.reply_text(
-            "\u2692\ufe0f This anime is not available yet. We are working under maintenance to make it available soon. Stay tuned! @ongoinganiime"
+            "🔐 Please join our channel to use this bot: https://t.me/zxdverse"
         )
+        return
+
+    if user.id == OWNER_ID and user.id in buffered_files and buffered_files[user.id]:
+        anime_ref = db_ref.child(text.replace(".", "").replace("$", "").replace("[", "").replace("]", "").replace("#", "").replace("/", ""))
+        existing = anime_ref.get() or []
+        new_files = buffered_files[user.id]
+        anime_ref.set(existing + new_files)
+        await update.message.reply_text(f"✅ {len(new_files)} files saved under {text}")
+        buffered_files[user.id] = []
+    else:
+        anime_ref = db_ref.child(text)
+        files = anime_ref.get()
+        if files:
+            for fid in files:
+                await update.message.reply_document(document=InputFile(fid))
+        else:
+            await update.message.reply_text(
+                f"⚠️ This anime is not available yet. We are working to make it available soon. Stay tuned! ✨"
+            )
+
+# === MAIN ===
+async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO | filters.AUDIO, handle_files))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text))
+
+    await app.run_polling()
 
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.ALL | filters.Video.ALL | filters.Audio.ALL, handle_files))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    app.run_polling()
-    
+    import asyncio
+    asyncio.run(main())
