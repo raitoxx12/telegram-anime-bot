@@ -11,9 +11,9 @@ from telegram.ext import (
 )
 
 # === CONFIG ===
-BOT_TOKEN = "6822633489:AAEBQWl94eDTWqRMRwdhoEyElWETF6DFuPE"
+BOT_TOKEN = "7770796733:AAHrR9GlvFqbD2TL6JPnlhWtoV844-3IxSw"
 OWNER_ID = 5525952879
-NPOINT_URL = "https://api.npoint.io/8a2cbf607e1f8e4ce8e4"
+GIST_URL = "https://gist.githubusercontent.com/raitoxx12/cb30c6e29ff7ef61404cc1f9296a0445/raw/623775477ae730081f8805c32703d7cf70beef4a/data.json"
 
 data = {}
 temp_files = []
@@ -23,21 +23,23 @@ async def load_data():
     global data
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(NPOINT_URL) as resp:
-                data = await resp.json()
-                print("✅ Data loaded from NPoint")
+            async with session.get(GIST_URL) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    print("✅ Data loaded from Gist")
+                else:
+                    data = {}
+                    print("⚠️ Gist is empty or not found")
     except Exception as e:
         print(f"❌ Error loading data: {e}")
         data = {}
 
 async def save_data():
-    if not data or data == {}:
-        print("⚠️ Skipping save: data is empty!")
-        return
     try:
+        headers = {'Content-Type': 'application/json'}
         async with aiohttp.ClientSession() as session:
-            await session.put(NPOINT_URL, json=data)
-            print("✅ Data saved to NPoint")
+            async with session.put(GIST_URL, headers=headers, data=json.dumps(data)):
+                print("✅ Data saved to Gist")
     except Exception as e:
         print(f"❌ Error saving data: {e}")
 
@@ -98,7 +100,6 @@ async def handle_hashtag(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         new_files = [f for f in temp_files if f not in data[tag]]
         data[tag].extend(new_files)
-        print(f"Saving tag: {tag}, with {len(data[tag])} files")
         await save_data()
 
         msg = (
@@ -126,9 +127,8 @@ async def handle_hashtag(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚫 *You are trying to interrupt the bot by sending these bullshit messages.*\n"
-        "If you want to store your files, go to @filestorebot\n"
-        "If not, get lost @zeqseed",
+        "🚫 *You are trying to interrupt the bot by sending these messages.*\n"
+        "Use hashtags to fetch files or /start to see available anime.",
         parse_mode="Markdown"
     )
 
@@ -152,4 +152,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except RuntimeError as e:
         print(f"⚠️ RuntimeError caught: {e}")
-        
+            
