@@ -13,7 +13,7 @@ from telegram.ext import (
 # === CONFIG ===
 BOT_TOKEN = "6822633489:AAEBQWl94eDTWqRMRwdhoEyElWETF6DFuPE"
 OWNER_ID = 5525952879
-NPOINT_URL = "https://api.npoint.io/9342c98693c66b52b665"
+NPOINT_URL = "https://api.npoint.io/8a2cbf607e1f8e4ce8e4"
 
 data = {}
 temp_files = []
@@ -146,12 +146,10 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
-    keep_alive()
-    nest_asyncio.apply()
-    try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(main())
-    except RuntimeError as e:
-        print(f"⚠️ RuntimeError caught safely: {e}")
-
-
+    keep_alive()
+    nest_asyncio.apply()
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        print(f"⚠️ RuntimeError caught: {e}")
+        
